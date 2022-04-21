@@ -9,7 +9,7 @@ class Project
       return [] unless dataroot.directory? && dataroot.executable? && dataroot.readable?
 
       dataroot.children.map do |d|
-        Project.new({ :name => d.basename })
+        Project.from_directory(d)
       rescue StandardError => e
         Rails.logger.warn("Didn't create project. #{e.message}")
         nil
@@ -17,12 +17,7 @@ class Project
     end
 
     def find(project_path)
-      Rails.logger.debug("project_path: #{project_path}")
-      full_path = dataroot.join(project_path)
-      Rails.logger.debug("full_path: #{full_path}")
-      return nil unless full_path.directory?
-
-      Project.new({ name: full_path.basename })
+      from_directory(dataroot.join(project_path))
     end
 
     def dataroot
@@ -32,41 +27,47 @@ class Project
         Pathname.new('')
       end
     end
+
+    def from_directory(full_path)
+      return nil unless full_path.directory? && full_path.executable? && full_path.readable?
+
+      Project.new({project_directory: full_path.basename})
+    end
   end
-
-  validates :dir, presence: true
-  validates :dir, format: {
-    with: /\A[\w-]+\z/,
-    message: 'Directory may only contain letters, digits, dashes, and underscores'
-  }
-
-  attr_reader :name, :description
   
+  attr_reader :dir
   delegate :icon, :name, :description, to: :manifest
 
   def initialize(attributes = {})
-    @name         = attributes.fetch(:name, nil).to_s
-    @description  = attributes.fetch(:description, nil).to_s
+    @dir = attributes[:project_directory]  || attributes[:name].to_s.downcase.tr_s(' ', '_')
+    @manifest = Manifest.new(attributes).merge(Manifest.load(manifest_path))
   end
  
   # @params [Hash] 
   # @return [Bool]
   def save(attributes)
-    result = update(attributes)
-    # errors.add(:save, 'Cannot save manifest') unless result
-    unless result
-      Rails.logger.debug("result is #{result}, need it to be true")
-    end
-    result
+    make_dir
+    update(attributes)
   end
 
   # @params [Hash] 
   # @return [Bool]
   def update(attributes)
     # only have side effects in update
-    new_manifest = Manifest.load(manifest_path)
     new_manifest = manifest.merge(attributes)
-    new_manifest.valid? ? new_manifest.save(manifest_path) : false
+
+    if new_manifest.valid?
+      if new_manifest.save(manifest_path)
+        true
+      else
+        errors.add(:update, "Cannot save manifest to #{manifest_path}")
+        false
+      end  
+    else
+      errors.add(:update, "Cannot not save an invalid manifest.")
+      Rails.logger.debug("did not update invalid manfest.")
+      false
+    end
   end
 
   def destroy!
@@ -74,28 +75,31 @@ class Project
   end
 
   def configuration_directory
-    unless dir.blank?
-      Pathname.new("#{project_dataroot}/.ondemand").tap { |path| path.mkpath unless path.exist? }
-    end
+    project_dataroot.join('.ondemand')
   end
 
   def project_dataroot
-    Project.dataroot.join(dir)
-  end
-
-  def dir
-    @name.downcase.tr_s(' ', '_')
+    Project.dataroot.join(@dir)
   end
 
   def title
     name.titleize
   end
 
-  def manifest
-    @manifest ||= Manifest.load(manifest_path)
+  def manifest_path
+    configuration_directory.join('manifest.yml')
   end
 
-  def manifest_path
-    File.join(configuration_directory, 'manifest.yml') unless configuration_directory.nil?
+  private 
+
+  attr_reader :manifest
+
+  def make_dir
+    begin
+      project_dataroot.mkpath unless project_dataroot.exist?
+      configuration_directory.mkpath unless configuration_directory.exist?
+    rescue => e
+      errors.add(:make_directory, "failed to make directory: #{e.message}")
+    end
   end
 end

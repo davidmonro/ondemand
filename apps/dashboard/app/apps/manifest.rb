@@ -161,8 +161,9 @@ category: OSC
     Pathname.new(path).write(self.to_yaml)
 
     true
-  rescue
+  rescue => e
     # TODO Add a custom exception here to track why it erred. IO? Permissions? etc.
+    Rails.logger.debug("Cannot save manifest because of #{e.message}.")
     false
   end
 
