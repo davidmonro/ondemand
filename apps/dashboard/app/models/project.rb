@@ -39,7 +39,7 @@ class Project
   delegate :icon, :name, :description, to: :manifest
 
   def initialize(attributes = {})
-    @dir = attributes[:project_directory]  || attributes[:name].to_s.downcase.tr_s(' ', '_')
+    @dir = attributes.delete(:project_directory) || attributes[:name].to_s.downcase.tr_s(' ', '_')
     @manifest = Manifest.new(attributes).merge(Manifest.load(manifest_path))
   end
  
