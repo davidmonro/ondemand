@@ -79,7 +79,7 @@ class Project
   end
 
   def project_dataroot
-    Project.dataroot.join(@dir)
+    Project.dataroot.join(dir)
   end
 
   def title
